@@ -13,48 +13,56 @@ module.exports = async (req, res) => {
   try {
     // Handle the /addUserPlaytime endpoint
     if (method === "POST" && path === "/api/playtime/addUserPlaytime") {
-      if (!body.id || !body.time || !body.key) {
-        return res.status(400).send("Invalid data.");
+      const { id, time, key } = req.query; // Extract query parameters
+    
+      // Validate query parameters
+      if (!id || !time || !key) {
+        return res.status(418).send("Invalid data.");
       }
-      if (body.key !== process.env.SET_KEY) {
+      if (key !== process.env.SET_KEY) {
         return res.status(401).send("Invalid API key");
       }
-
-      // Check existing playtime
-      const { data: oldData, error: oldError } = await supabase
-        .from("playtime")
-        .select()
-        .eq("id", parseInt(body.id));
-
-      if (oldError) {
-        console.error("Error fetching existing data:", oldError);
-        return res.status(500).send("Error fetching existing data");
+    
+      try {
+        // Check existing playtime
+        const { data: oldData, error: oldError } = await supabase
+          .from("playtime")
+          .select()
+          .eq("id", parseInt(id));
+    
+        if (oldError) {
+          console.error("Error fetching existing data:", oldError);
+          return res.status(500).send("Error fetching existing data");
+        }
+    
+        const playtimeToUpdate =
+          oldData && oldData.length !== 0
+            ? parseInt(time) + oldData[0].playtime
+            : parseInt(time);
+    
+        // Upsert playtime data
+        const { data, error } = await supabase.from("playtime").upsert(
+          [
+            {
+              id: parseInt(id),
+              playtime: playtimeToUpdate,
+            },
+          ],
+          { onConflict: "id" }
+        );
+    
+        if (error) {
+          console.error("Error upserting data:", error);
+          return res.status(500).send("Error upserting data");
+        }
+    
+        return res.status(200).send(true);
+      } catch (err) {
+        console.error("Unexpected error:", err);
+        return res.status(500).send("Unexpected server error");
       }
-
-      const playtimeToUpdate =
-        oldData && oldData.length !== 0
-          ? parseInt(body.time) + oldData[0].playtime
-          : parseInt(body.time);
-
-      // Upsert playtime data
-      const { data, error } = await supabase.from("playtime").upsert(
-        [
-          {
-            id: parseInt(body.id),
-            playtime: playtimeToUpdate,
-          },
-        ],
-        { onConflict: "id" }
-      );
-
-      if (error) {
-        console.error("Error upserting data:", error);
-        return res.status(500).send("Error upserting data");
-      }
-
-      return res.status(200).send(true);
     }
-
+    
     // Handle the /getUserPlaytime endpoint
     if (method === "GET" && path === "/api/playtime/getUserPlaytime") {
       const { id, key } = queryParams;
